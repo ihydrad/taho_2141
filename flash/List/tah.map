@@ -1,0 +1,38 @@
+RAM Allocation [bytes]
+Variable                                                                          Address   Size
+------------------------------------------------------------------------------------------------
+ch                                                                                0x0080      16
+leds                                                                              0x0090       7
+number                                                                            0x0097       4
+data                                                                              0x009B       4
+dat                                                                               0x009F       2
+cnt                                                                               0x00A1       1
+len                                                                               0x00A2       4
+time                                                                              0x00A6       1
+t                                                                                 0x00A7       1
+
+EEPROM Allocation [bytes]
+Variable                                                                          Address   Size
+------------------------------------------------------------------------------------------------
+
+Register Allocation
+Variable                                                                          Register  Size
+------------------------------------------------------------------------------------------------
+start                                                                             GPIOR0.0  1bit
+process                                                                           GPIOR0.1  1bit
+refresh                                                                           GPIOR0.2  1bit
+led_l                                                                             R3           1
+led_h                                                                             R2           1
+
+FLASH Allocation [words]
+Function                                                                          Address   Size
+------------------------------------------------------------------------------------------------
+initdev                                                                           0x00057     18
+RefreshDisplay                                                                    0x00069     39
+conv                                                                              0x00090     49
+PrepareData                                                                       0x000C1     89
+chk_OVF_T1                                                                        0x0011A      9
+WD                                                                                0x00123      9
+main                                                                              0x0012C     58
+int0                                                                              0x00166    117
+timer0_OVF                                                                        0x001DB     34

@@ -1,0 +1,339 @@
+#include <io.h>
+#include <delay.h>
+
+#define START_TIMER           TCCR1B=0x02
+#define STOP_TIMER            TCCR1B=0x00 
+#define TIMER                 (TCNT1L+(TCNT1H<<8))
+#define CLR_TIMER_RPM         TCNT1H=0;TCNT1L=0
+#define NO_PULSE              60000
+
+#define CHR_PORT              PORTB
+#define NUM_PORT              PORTD
+#define ALL_NUM               0xCC
+#define LED_LOW               6
+#define LED_HI                3
+#define NUM_1                 5
+#define NUM_2                 1
+#define NUM_3                 0
+#define NUM_4                 4
+#define SBI(BYTE,BIT)         BYTE|=(1<<BIT)
+#define CBI(BYTE,BIT)         BYTE&=~(1<<BIT)
+#define LED_delay             200
+
+bit
+start,
+process,
+refresh;
+
+#pragma used+
+//__eeprom unsigned char
+unsigned char
+stop[4]={
+         0x6B,
+         0x59,
+         0xFB,
+         0xF1
+         },
+ch[16] = {
+        0xBD,     //0
+        0x0C,     //1
+        0xBA,     //2
+        0xAE,     //3 
+        0x0F,     //4 
+        0xA7,     //5 
+        0xB7,     //6
+        0x2C,     //7 
+        0xBF,     //8
+        0xAF,     //9 
+        0x00,     //blank   
+        0x02,     //-
+        0xA7,     // S    12
+        0x93,     // T    13
+        0xBD,     // O    14
+        0x3B      // P    15
+                },
+leds[7]={
+         0x00,    //0 - leds
+         0x02,    //1 - led
+         0x03,    //2 - leds
+         0x13,    //3 - leds
+         0x1B,    //4 - leds
+         0x1F,    //5 - leds
+         0x9F,    //6 - leds                         
+         };
+#pragma used-
+
+unsigned char
+number[4],
+led_l,
+led_h;
+
+long 
+data;
+
+void initdev()
+{
+ DDRB=0xFF;
+ DDRD=0xFB;
+ 
+ PORTB=0x00;
+ PORTD=0x04;
+ 
+ MCUCR=0x02;
+ GIMSK=0x40;
+ 
+ TCCR0B=0x01;
+ TIMSK=0x02;
+ TCCR1B=0x02; 
+}
+
+void RefreshDisplay()
+{   
+ CHR_PORT=leds[led_l];
+ CBI(NUM_PORT,LED_LOW);
+ delay_us(LED_delay); 
+ SBI(NUM_PORT,LED_LOW);
+ 
+ CHR_PORT=leds[led_h];
+ CBI(NUM_PORT,LED_HI);
+ delay_us(LED_delay);
+ SBI(NUM_PORT,LED_HI);
+ 
+
+ CHR_PORT=ch[number[0]];
+ CBI(NUM_PORT,NUM_1);
+ delay_us(LED_delay);
+ SBI(NUM_PORT,NUM_1); 
+ 
+ CHR_PORT=ch[number[1]];
+ CBI(NUM_PORT,NUM_2);
+ delay_us(LED_delay);
+ SBI(NUM_PORT,NUM_2);
+ 
+ CHR_PORT=ch[number[2]];
+ CBI(NUM_PORT,NUM_3);
+ delay_us(LED_delay);
+ SBI(NUM_PORT,NUM_3);
+ 
+ CHR_PORT=ch[number[3]];
+ CBI(NUM_PORT,NUM_4);
+ delay_us(LED_delay);
+ SBI(NUM_PORT,NUM_4); 
+}
+
+int  conv(unsigned int len_imp)
+{    
+ float f;
+ int tmp;
+    
+ if(len_imp==0) return 0;  
+ f=((float)1000000)/len_imp; 
+ f/=2;        
+ f*=60;
+ tmp=f; 
+ tmp/=50; 
+ tmp*=50;    
+ return tmp;          
+}
+
+void PrepareData(unsigned int rpm)
+{
+ unsigned int r=0; 
+ unsigned char i=0;
+     
+      if(rpm>6000)
+        {
+         rpm=5999;
+         }
+ r=rpm;
+          
+      if(rpm>3000)
+         {
+          led_l=6;
+          led_h=(rpm/500)-6;
+            }
+      else
+          {                
+           led_l=rpm/500;
+           led_h=0;
+            }       
+     
+     
+      for(i=0; i<4; i++)
+      {
+       number[3-i]=rpm%10;
+       rpm/=10;
+      }
+      
+      //Пустые символы
+      if(r<10)
+      {
+       number[0]=10;
+       number[1]=10;
+       number[2]=10;
+       goto exit;
+      }
+      
+      if((r>=10)&(r<100))
+      {
+       number[0]=10;
+       number[1]=10;
+       goto exit;       
+      }
+      
+      if((r>=100)&(r<1000))
+      {
+       number[0]=10;
+       goto exit;              
+      }
+      exit:   
+}
+
+void chk_OVF_T1()
+{
+     if(TIFR&0x80)
+        {
+         start=0;
+         process=0;      
+         SBI(TIFR,TOV1);             
+           } 
+}
+
+void WD()
+{
+ #asm("cli")
+ #asm("wdr") 
+ WDTCSR |= (1<<WDCE) | (1<<WDE);
+ WDTCSR = (1<<WDE) | (1<<WDP2) | (1<<WDP0);
+ #asm("sei")
+}
+
+void main()
+{
+ static unsigned int
+ dat;
+    
+ initdev(); 
+ WD();
+  #asm ("sei")
+ 
+   while (1)
+  {  
+    chk_OVF_T1();
+    #asm("wdr") 
+          
+      if(start)
+        {             
+            if(refresh)
+              {
+               dat=conv(data);
+               PrepareData(dat);
+               refresh=0;
+               GIMSK|=(1<<INT0);
+               START_TIMER;
+               }     
+         
+         RefreshDisplay();
+          }
+      else
+        {  
+           if(refresh)
+            {
+              led_l++;         
+                
+                 if(led_l>6)
+                   {                    
+                    led_h++;
+                    led_l=6;
+                       
+                      if(led_h>6)
+                      {
+                       led_l=0;
+                       led_h=0;
+                      }   
+                    
+                   } 
+              refresh=0;
+                      }
+         number[0]=12;
+         number[1]=13;
+         number[2]=14;
+         number[3]=15;
+         RefreshDisplay();          
+           }
+             }
+               }       
+  
+
+interrupt [EXT_INT0] void int0(void)
+{ 
+ static unsigned char 
+ cnt=0;
+
+ static unsigned int
+ len[2]={0};  
+ 
+ chk_OVF_T1(); 
+  
+  if(!process)
+    {
+    START_TIMER;
+    CLR_TIMER_RPM;    
+    process=1;
+       }
+ else 
+    {
+     switch(cnt)
+           {
+            case 0:
+            STOP_TIMER;      
+            len[0]=TIMER;     
+            process=0;
+            cnt++;
+            break;
+      
+            case 1:
+            STOP_TIMER;
+            len[1]=TIMER;
+            if((len[1] < (len[0]+300)) && (len[1] > (len[0]-300)))
+              {
+               cnt=10; 
+                }
+            else
+              {
+               cnt=0; 
+                }
+            process=0;
+            break;
+                        
+            default:break;
+                }
+                
+     if(cnt==10)
+       {
+        data=((long)len[0]+(long)len[1])/2;
+        cnt=0;
+        start=1;
+        GIMSK=0x00;        
+          }
+        }             
+}
+
+interrupt [TIM0_OVF] void timer0_OVF(void)
+{
+ static unsigned char 
+ time,t;
+ 
+ time++;
+   //Задержка в полсекунды
+   if(time>250)
+     {
+      time=0;
+      t++;
+         if(t==16)
+           {
+            refresh=1;
+            t=0;
+           }
+       }
+} 
